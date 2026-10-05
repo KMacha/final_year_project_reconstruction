@@ -21,9 +21,33 @@ class ObjectTrack(KalmanFilter):
         #variable to keep track of how many times this track has tracked an object.
         self.num_frames_tracked = 0
 
-    def __init__(self,initial_measurements:dict,delta_t:float,measurement_stds:list[float],track_id:int,track_bbox:tuple|None=None,track_colour_hist:list|None=None):
+    def _set_thumbnail_image(self,thumbnail_image,resize_tpl:tuple=(224,224)):
+        if thumbnail_image is not None:
+            return cv2.resize(thumbnail_image,resize_tpl)
+
+    def __init__(
+        self,
+        initial_measurements:dict,
+        delta_t:float,
+        measurement_stds:list[float],
+        track_id:int,
+        track_bbox:tuple|None=None,
+        track_colour_hist:np.ndarray|None=None,
+        track_shape_feature:np.ndarray|None = None,
+        thumbnail_image:np.ndarray|None = None,
+        track_start_time:float|None = None,
+        alpha:float=0.1
+    ):
+        #initialising some needed variables
         self.bbox = track_bbox
         self.track_colour_hist = track_colour_hist
+        self.track_shape_feature = track_shape_feature
+        self.alpha = alpha
+        self.track_start_time = track_start_time
+        self.track_end_time = None
+
+        #the thumbnail image will be used to get the image category later before saving
+        self.thumbnail_image = self._set_thumbnail_image(thumbnail_image)
 
         matrices = get_kalman_filter_matrices(
             initial_measurements = initial_measurements,
@@ -75,9 +99,21 @@ class ObjectTrack(KalmanFilter):
     def set_confirmed(self,is_confirmed:bool=True):
         self.confirmed_track = is_confirmed
 
+    def update_shape_feature_info(self,shape_feature):
+        if shape_feature is None:
+            return
+
+        self.track_shape_feature = (1-self.alpha) * self.track_shape_feature + self.alpha * shape_feature
+
     def update_colour_info(self,colour_hist):
-        #TODO:perhaps we should update it as a moving average or some such??
-        self.track_colour_hist = colour_hist
+        if colour_hist is None:
+            return
+
+        if self.track_colour_hist is None:
+            self.track_colour_hist = colour_hist
+        else:
+            self.track_colour_hist = (1 - self.alpha) * self.track_colour_hist + self.alpha * colour_hist
+            cv2.normalize(self.track_colour_hist,self.track_colour_hist)
 
     def set_bbox(self,bbox:tuple):
         self.bbox = bbox
@@ -146,10 +182,10 @@ class ObjectTrack(KalmanFilter):
 class ObjectTracker:
     def __init__(
         self,
-        undetected_threshold:int = 30,
+        undetected_threshold:int = 20,
         tentative_track_threshold:int = 5,
         motion_threshold:float=13.28,
-        colour_threshold:float = 0.5,
+        colour_threshold:float = 0.4,
         start_track_id:int=1
     ):
         #important thresholds, one for the threshold of when we proclaim a track to be prime for deletetion. (i.e. when it hasn't been detected, or rather
@@ -175,7 +211,16 @@ class ObjectTracker:
         #simulating what would be stored in a 'database'
         self.valid_tracks_tracked = 0
 
-    def track(self,detections:list[tuple],detected_bboxes:list[tuple],detected_colours_info:list,measurement_stds:float,delta_t:float=1,frame:np.ndarray=None):
+    def track(
+        self,
+        detections:list[tuple],
+        detected_bboxes:list[tuple],
+        detected_colours_info:list,
+        detected_shape_info:list,
+        measurement_stds:float,
+        delta_t:float=1,
+        frame:np.ndarray=None
+    ):
         #where detections is a list of tuples containing the measurements, i.e. [(c_x,c_y,w,h),(c_x_1,c_y_1,w_1,h_1),...]
         #detected_bboxes is a list of tuples contatining the detections bbox co-ordinates [(x,x1,y,y1),(...),...]
         #detected_colours_info contains colour information for the detected objects
@@ -187,7 +232,8 @@ class ObjectTracker:
                 detections = detections,
                 delta_t = delta_t,
                 measurement_stds = measurement_stds,
-                detected_objects_colour_info = detected_colours_info
+                detected_objects_colour_info = detected_colours_info,
+                detected_shape_info = detected_shape_info
             )
         else:
             #we have new detections, and we also have object_tracks that are already existing
@@ -207,7 +253,13 @@ class ObjectTracker:
                 detection_idxs = set(range(len(detections)))
             )
 
-            self._track_for_assigned_tracks(assigned_idxs,detections,detected_bboxes,detected_colours_info)
+            self._track_for_assigned_tracks(
+                assigned_idxs = assigned_idxs,
+                detections = detections,
+                detected_bboxes = detected_bboxes,
+                detected_colours_info = detected_colours_info,
+                detected_shape_info = detected_shape_info
+            )
 
             #TODO:Make better
             #we draw from here since the unassigned tracks function deletes from the list
@@ -226,7 +278,8 @@ class ObjectTracker:
                 detections = [detections[idx] for idx in unassigned_detections_idxs],
                 delta_t = delta_t,
                 measurement_stds = measurement_stds,
-                detected_objects_colour_info =[detected_colours_info[idx] for idx in unassigned_detections_idxs]
+                detected_objects_colour_info =[detected_colours_info[idx] for idx in unassigned_detections_idxs],
+                detected_shape_info = [detected_shape_info[idx] for idx in unassigned_detections_idxs]
             )
 
             #TODO: Better way for deletion?
@@ -261,32 +314,37 @@ class ObjectTracker:
         return self.valid_tracks_tracked
 
 
-    def _initialise_new_object_tracks(self,detections:list[tuple],delta_t:float,measurement_stds:list,detected_objects_colour_info:list):
+    def _initialise_new_object_tracks(self,detections:list[tuple],delta_t:float,measurement_stds:list,detected_objects_colour_info:list,detected_shape_info:list):
         #see track function for explanation of parameters
-        for (x,y,w,h),object_colour_hist in zip(detections,detected_objects_colour_info):
+        for (x,y,w,h),object_colour_hist,object_shape_info in zip(detections,detected_objects_colour_info,detected_shape_info):
             track_obj = ObjectTrack(
                 initial_measurements = {"initial_x":x,"initial_y":y,"initial_w":w,"initial_h":h},
                 delta_t = delta_t,
                 measurement_stds = measurement_stds,
                 track_colour_hist = object_colour_hist,
+                track_shape_feature = object_shape_info,
                 track_id = self.curr_track_id
             )
             self.object_tracks.append(track_obj)
 
             self.curr_track_id+=1
 
-    def _track_for_assigned_tracks(self,assigned_idxs:list,detections:list,detected_bboxes:list,detected_colours_info:list):
+    def _track_for_assigned_tracks(self,assigned_idxs:list,detections:list,detected_bboxes:list,detected_colours_info:list,detected_shape_info:list):
         #assigned_idxs is a list containing tuples of track_idx to detection_idx
         #detections is a list of all the detections
         #detected_bboxes is a list of all the bboxes
         #detected_colours_info is a list of all the colour info
+        #detected_shape_info is a list of all the shape info
 
         for t_idx,d_idx in assigned_idxs:
             track_obj = self.object_tracks[t_idx]
             measurement = detections[d_idx]
 
             track_obj.set_bbox(detected_bboxes[d_idx])
+
+            #TODO: Perhaps only update the colour info when we are very confident about the colour threshold
             track_obj.update_colour_info(detected_colours_info[d_idx])
+            track_obj.update_shape_feature_info(detected_shape_info[d_idx])
 
             track_obj.update_predict(measurement = measurement)
 
