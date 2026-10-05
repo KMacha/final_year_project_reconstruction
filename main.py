@@ -3,6 +3,8 @@ import time
 import cv2
 
 from motion_detection.detector import Detector
+from feature_extraction.colour_descriptor import get_colour_descriptor
+from feature_extraction.shape_descriptor import get_fourier_descriptors
 from object_tracker.object_tracker import ObjectTracker
 
 def get_detection_bboxes(contours,scale_x:float,scale_y:float)->tuple[list,list]:
@@ -74,10 +76,14 @@ if __name__ == "__main__":
                 scale_y = scale_y
             )
 
+            colour_descriptor = get_colour_descriptor(frame = frame,contours = contours,images_bboxes = detections_bboxes)
+            shape_descriptor = get_fourier_descriptors(contours)
+
             tracker_obj.track(
                 detections = detections,
                 detected_bboxes = detections_bboxes,
-                detected_colours_info = [None] * len(detections),
+                detected_colours_info = colour_descriptor,
+                detected_shape_info = shape_descriptor,
                 measurement_stds = [3.0,3.0,5.0,5.0],
                 frame = frame
             )
