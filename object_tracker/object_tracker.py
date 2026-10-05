@@ -35,7 +35,7 @@ class ObjectTrack(KalmanFilter):
         track_colour_hist:np.ndarray|None=None,
         track_shape_feature:np.ndarray|None = None,
         thumbnail_image:np.ndarray|None = None,
-        track_start_time:float|None = None,
+        track_start_timestamp:float|None = None,
         alpha:float=0.1
     ):
         #initialising some needed variables
@@ -43,8 +43,8 @@ class ObjectTrack(KalmanFilter):
         self.track_colour_hist = track_colour_hist
         self.track_shape_feature = track_shape_feature
         self.alpha = alpha
-        self.track_start_time = track_start_time
-        self.track_end_time = None
+        self.track_start_timestamp = track_start_timestamp
+        self.track_end_timestamp = track_start_timestamp
 
         #the thumbnail image will be used to get the image category later before saving
         self.thumbnail_image = self._set_thumbnail_image(thumbnail_image)
@@ -114,6 +114,12 @@ class ObjectTrack(KalmanFilter):
         else:
             self.track_colour_hist = (1 - self.alpha) * self.track_colour_hist + self.alpha * colour_hist
             cv2.normalize(self.track_colour_hist,self.track_colour_hist)
+
+    def update_time(self,track_timestamp):
+        if self.track_start_timestamp is None:
+            self.track_start_timestamp = track_timestamp
+
+        self.track_end_timestamp = track_timestamp
 
     def set_bbox(self,bbox:tuple):
         self.bbox = bbox
@@ -219,7 +225,8 @@ class ObjectTracker:
         detected_shape_info:list,
         measurement_stds:float,
         delta_t:float=1,
-        frame:np.ndarray=None
+        frame:np.ndarray=None,
+        frame_timestamp:float=0
     ):
         #where detections is a list of tuples containing the measurements, i.e. [(c_x,c_y,w,h),(c_x_1,c_y_1,w_1,h_1),...]
         #detected_bboxes is a list of tuples contatining the detections bbox co-ordinates [(x,x1,y,y1),(...),...]
@@ -229,11 +236,14 @@ class ObjectTracker:
 
         if len(self.object_tracks) == 0:
             self._initialise_new_object_tracks(
+                frame = frame,
                 detections = detections,
+                detected_bboxes = detected_bboxes,
                 delta_t = delta_t,
                 measurement_stds = measurement_stds,
                 detected_objects_colour_info = detected_colours_info,
-                detected_shape_info = detected_shape_info
+                detected_shape_info = detected_shape_info,
+                track_start_timestamp = frame_timestamp,
             )
         else:
             #we have new detections, and we also have object_tracks that are already existing
@@ -258,7 +268,8 @@ class ObjectTracker:
                 detections = detections,
                 detected_bboxes = detected_bboxes,
                 detected_colours_info = detected_colours_info,
-                detected_shape_info = detected_shape_info
+                detected_shape_info = detected_shape_info,
+                track_timestamp = frame_timestamp
             )
 
             #TODO:Make better
@@ -275,11 +286,14 @@ class ObjectTracker:
 
             #unassigned_detections are new detections hence initialise them?
             self._initialise_new_object_tracks(
+                frame = frame,
                 detections = [detections[idx] for idx in unassigned_detections_idxs],
+                detected_bboxes = [detected_bboxes[idx] for idx in unassigned_detections_idxs],
                 delta_t = delta_t,
                 measurement_stds = measurement_stds,
                 detected_objects_colour_info =[detected_colours_info[idx] for idx in unassigned_detections_idxs],
-                detected_shape_info = [detected_shape_info[idx] for idx in unassigned_detections_idxs]
+                detected_shape_info = [detected_shape_info[idx] for idx in unassigned_detections_idxs],
+                track_start_timestamp = frame_timestamp
             )
 
             #TODO: Better way for deletion?
@@ -314,27 +328,50 @@ class ObjectTracker:
         return self.valid_tracks_tracked
 
 
-    def _initialise_new_object_tracks(self,detections:list[tuple],delta_t:float,measurement_stds:list,detected_objects_colour_info:list,detected_shape_info:list):
+    def _initialise_new_object_tracks(
+        self,
+        frame,
+        detections:list[tuple],
+        detected_bboxes:list[tuple],
+        delta_t:float,
+        measurement_stds:list,
+        detected_objects_colour_info:list,
+        detected_shape_info:list,
+        track_start_timestamp: float
+    ):
         #see track function for explanation of parameters
-        for (x,y,w,h),object_colour_hist,object_shape_info in zip(detections,detected_objects_colour_info,detected_shape_info):
+        zipped_things = zip(detections,detected_bboxes,detected_objects_colour_info,detected_shape_info)
+        for (x,y,w,h),(x,x_1,y,y_1),object_colour_hist,object_shape_info in zipped_things:
             track_obj = ObjectTrack(
                 initial_measurements = {"initial_x":x,"initial_y":y,"initial_w":w,"initial_h":h},
                 delta_t = delta_t,
                 measurement_stds = measurement_stds,
                 track_colour_hist = object_colour_hist,
                 track_shape_feature = object_shape_info,
-                track_id = self.curr_track_id
+                track_id = self.curr_track_id,
+                thumbnail_image = frame[y:y_1,x:x_1],
+                track_start_timestamp = track_start_timestamp
             )
             self.object_tracks.append(track_obj)
 
             self.curr_track_id+=1
 
-    def _track_for_assigned_tracks(self,assigned_idxs:list,detections:list,detected_bboxes:list,detected_colours_info:list,detected_shape_info:list):
+    def _track_for_assigned_tracks(
+        self,
+        assigned_idxs:list,
+        detections:list,
+        detected_bboxes:list,
+        detected_colours_info:list,
+        detected_shape_info:list,
+        track_timestamp:float
+
+    ):
         #assigned_idxs is a list containing tuples of track_idx to detection_idx
         #detections is a list of all the detections
         #detected_bboxes is a list of all the bboxes
         #detected_colours_info is a list of all the colour info
         #detected_shape_info is a list of all the shape info
+        #track_timestamp is the timestamp for when the detected objects were taken from the frame
 
         for t_idx,d_idx in assigned_idxs:
             track_obj = self.object_tracks[t_idx]
@@ -345,6 +382,7 @@ class ObjectTracker:
             #TODO: Perhaps only update the colour info when we are very confident about the colour threshold
             track_obj.update_colour_info(detected_colours_info[d_idx])
             track_obj.update_shape_feature_info(detected_shape_info[d_idx])
+            track_obj.update_time(track_timestamp = track_timestamp)
 
             track_obj.update_predict(measurement = measurement)
 
