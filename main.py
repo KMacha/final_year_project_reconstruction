@@ -3,6 +3,31 @@ import time
 import cv2
 
 from motion_detection.detector import Detector
+from object_tracker.object_tracker import ObjectTracker
+
+def get_detection_bboxes(contours,scale_x:float,scale_y:float)->tuple[list,list]:
+    detections,detections_bboxes = list(),list()
+
+    contours = [(contour/[scale_x,scale_y]).astype(int) for contour in contours]
+
+    for contour in contours:
+        x,y,w,h = cv2.boundingRect(contour)
+        x_1 = x+w
+        y_1 = y+h
+
+        c_x = (x + x_1)/2
+        c_y = (y + y_1)/2
+
+        #x = int(x/scale_x)
+        #y = int(y/scale_y)
+        #w = int(w/scale_x)
+        #h = int(h/scale_y)
+
+        detections.append((c_x,c_y,w,h))
+        detections_bboxes.append((x,x_1,y,y_1))
+
+
+    return contours,detections,detections_bboxes
 
 
 if __name__ == "__main__":
@@ -27,6 +52,7 @@ if __name__ == "__main__":
 
     #detector_obj = Detector(detector_type="three_frame_difference")
     detector_obj = Detector(contour_area_thresh=50)
+    tracker_obj = ObjectTracker()
 
     if video_cap.isOpened():
         start_time = time.perf_counter()
@@ -41,17 +67,25 @@ if __name__ == "__main__":
             motion_img,contours = detector_obj.get_motion_image_and_objects(bgr_img = resized_frame)
 
             #mapping the contours to the original size
-            for contour in contours:
-                x,y,w,h = cv2.boundingRect(contour)
-                x = int(x/scale_x)
-                y = int(y/scale_y)
-                w = int(w/scale_x)
-                h = int(h/scale_y)
 
+            contours,detections,detections_bboxes = get_detection_bboxes(
+                contours = contours,
+                scale_x = scale_x,
+                scale_y = scale_y
+            )
 
-                cv2.rectangle(frame,(x,y),(x+w,y+h),(255,0,0),2)
+            tracker_obj.track(
+                detections = detections,
+                detected_bboxes = detections_bboxes,
+                detected_colours_info = [None] * len(detections),
+                measurement_stds = [3.0,3.0,5.0,5.0],
+                frame = frame
+            )
 
-            contours = [(contour/[scale_x,scale_y]).astype(int) for contour in contours]
+            for (x,x_1,y,y_1) in detections_bboxes:
+                cv2.rectangle(frame,(x,y),(x_1,y_1),(255,0,0),2)
+
+            #contours = [(contour/[scale_x,scale_y]).astype(int) for contour in contours]
             cv2.drawContours(frame,contours,-1,(0,255,0))
 
             cv2.imshow("img",frame)
