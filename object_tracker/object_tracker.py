@@ -3,8 +3,8 @@ import numpy as np
 
 from scipy.optimize import linear_sum_assignment
 
-from tracker.kalman_matrix_configs import get_kalman_filter_matrices
-from tracker.kalman_filter import KalmanFilter
+from object_tracker.kalman_matrix_configs import get_kalman_filter_matrices
+from object_tracker.kalman_filter import KalmanFilter
 
 #maintains an object track, i.e. a kalman filter dedicated to tracking one object
 class ObjectTrack(KalmanFilter):
