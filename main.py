@@ -63,6 +63,8 @@ if __name__ == "__main__":
 
             if not ret: break
 
+            frame_timestamp = video_cap.get(cv2.CAP_PROP_POS_MSEC)
+
             resized_frame = cv2.resize(frame,(new_width,new_height))
 
             #motion_img = detector_obj.get_motion_image(bgr_img = frame)
@@ -85,7 +87,8 @@ if __name__ == "__main__":
                 detected_colours_info = colour_descriptor,
                 detected_shape_info = shape_descriptor,
                 measurement_stds = [3.0,3.0,5.0,5.0],
-                frame = frame
+                frame = frame,
+                frame_timestamp = frame_timestamp
             )
 
             for (x,x_1,y,y_1) in detections_bboxes:
@@ -98,7 +101,7 @@ if __name__ == "__main__":
             if motion_img is not None:
                 cv2.imshow("motion_img",motion_img)
 
-            key = cv2.waitKey(0) & 0xff;
+            key = cv2.waitKey(1) & 0xff;
 
             if key == ord('q'): break
 
