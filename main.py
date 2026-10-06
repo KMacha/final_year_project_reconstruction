@@ -105,10 +105,16 @@ if __name__ == "__main__":
 
             if key == ord('q'): break
 
-        end_time = time.perf_counter()
-        duration = end_time - start_time
-        print(f"Duration:{duration:.4f} seconds")
+
         video_cap.release()
         cv2.destroyAllWindows()
+
+        #before finishing completely we save the last of the remaining tracks
+        tracker_obj.save_object_tracks()
+
+        end_time = time.perf_counter()
+
+        duration = end_time - start_time
+        print(f"Duration:{duration:.4f} seconds")
 
 

@@ -1,3 +1,4 @@
+import time
 import cv2
 import numpy as np
 
@@ -5,6 +6,7 @@ from scipy.optimize import linear_sum_assignment
 
 from object_tracker.kalman_matrix_configs import get_kalman_filter_matrices
 from object_tracker.kalman_filter import KalmanFilter
+from classifier.inference import Inference
 
 #maintains an object track, i.e. a kalman filter dedicated to tracking one object
 class ObjectTrack(KalmanFilter):
@@ -23,7 +25,8 @@ class ObjectTrack(KalmanFilter):
 
     def _set_thumbnail_image(self,thumbnail_image,resize_tpl:tuple=(224,224)):
         if thumbnail_image is not None:
-            return cv2.resize(thumbnail_image,resize_tpl)
+            return thumbnail_image
+            #return cv2.resize(thumbnail_image,resize_tpl)
 
     def __init__(
         self,
@@ -96,6 +99,24 @@ class ObjectTrack(KalmanFilter):
     def get_total_undetected_frames(self)->int:
         return self.total_undetected_frames
 
+    def get_bbox(self)->tuple:
+        return self.bbox
+
+    def get_thumbnail_image(self):
+        return self.thumbnail_image
+
+    def get_save_info(self):
+        #returns the information about this track, as a dict,
+        #where the keys are the column names as in the database/ saving medium for easy saving
+        return {
+            "total_frames_tracked": self.num_frames_tracked,
+            "colour_histogram":self.track_colour_hist,
+            "shape_feature": self.track_shape_feature,
+            "start_timestamp": self.track_start_timestamp,
+            "end_timestamp": self.track_end_timestamp,
+            "thumbnail_image": self.thumbnail_image,
+        }
+
     def set_confirmed(self,is_confirmed:bool=True):
         self.confirmed_track = is_confirmed
 
@@ -124,8 +145,6 @@ class ObjectTrack(KalmanFilter):
     def set_bbox(self,bbox:tuple):
         self.bbox = bbox
 
-    def get_bbox(self)->tuple:
-        return self.bbox
 
     def _get_colour_distance(self,colour_hist)->np.float64:
         return cv2.compareHist(self.track_colour_hist,colour_hist,cv2.HISTCMP_BHATTACHARYYA)
@@ -192,7 +211,8 @@ class ObjectTracker:
         tentative_track_threshold:int = 5,
         motion_threshold:float=13.28,
         colour_threshold:float = 0.4,
-        start_track_id:int=1
+        save_tracks_threshold:int = 32,
+        start_track_id:int=1,
     ):
         #important thresholds, one for the threshold of when we proclaim a track to be prime for deletetion. (i.e. when it hasn't been detected, or rather
         #assigned a detected for UNDETECTED_THRESHOLD
@@ -206,12 +226,26 @@ class ObjectTracker:
         #threshold for the colour, by which if the colour_distance is above this threshold, we refuse it
         self.COLOUR_THRESHOLD = colour_threshold
 
+        #threshold number for when tracks that have already been completed are going to be saved
+        self.save_tracks_threshold = save_tracks_threshold
+
         # a big number to set as cost after we pre-gate
         #Also used to reject any assignments which are assigned to this cost
         self.INFINITY_VAL = 1e15
 
         self.object_tracks = list()
+
+        #holds the object tracks which are going to be saved to a database after crossing the threshold (save_tracks_threshold)
+        self.object_tracks_for_saving = list()
         self.curr_track_id = start_track_id
+
+        #inference obj
+        self.inference_obj = Inference(
+            model_name = "squeezenet_1_1",
+            npz_file_path = "./assets/model/pyt_classes.npz",
+            weights_file = "./assets/model/pyt_squeezenet_model.pth"
+        )
+
 
         #variable to keep track of how many objects have really been tracked (not including tentative ones)
         #simulating what would be stored in a 'database'
@@ -296,6 +330,9 @@ class ObjectTracker:
                 track_start_timestamp = frame_timestamp
             )
 
+            if len(self.object_tracks_for_saving) >= self.save_tracks_threshold:
+                self._save_object_tracks()
+
             #TODO: Better way for deletion?
             #Finally delete the tracks that were marked for deletion
             tracks_for_deletion = [self.object_tracks[idx] for idx in track_idxs_for_deletion]
@@ -303,6 +340,46 @@ class ObjectTracker:
                 self.object_tracks.remove(object_track)
 
 
+    def save_object_tracks(self):
+        print("Saving")
+        thumbnail_images = list()
+
+        #first get the thumbnail image for each object track for classification
+        for object_track in self.object_tracks_for_saving:
+            thumbnail_images.append(object_track.get_thumbnail_image())
+
+        #where predictions is a list whose elements are a tuple of (class_label,prob)
+        start_time = time.perf_counter()
+
+        #run classification
+        predictions = self.inference_obj.predict(imgs = thumbnail_images,threshold=0.3)
+
+        end_time = time.perf_counter()
+
+        duration = end_time - start_time
+
+        print(f"The Duration: {duration:.3f} Seconds")
+
+        for object_track,(label,prob) in zip(self.object_tracks_for_saving,predictions):
+            save_info = object_track.get_save_info()
+
+            print("*"*50)
+            print("*"*50,"\n")
+
+            print(f"{label} ===> {prob:.3f}")
+            print("thumbnail_image:",save_info["thumbnail_image"].shape)
+            print("frames tracked:",save_info["total_frames_tracked"])
+            print("colour_histogram:",save_info["colour_histogram"].shape)
+            print("shape_feature:",save_info["shape_feature"].shape)
+            print("start_timestamp:",save_info["start_timestamp"])
+            print("end_timestamp:",save_info["end_timestamp"])
+
+            print("\n"+"*"*50)
+            print("*"*50,"\n")
+
+        #save to the database
+
+        self.object_tracks_for_saving = list()
 
 
     def visualise_tracked_ids(self,frame:np.ndarray,object_tracks:list):
@@ -410,6 +487,8 @@ class ObjectTracker:
                 #self.object_tracks.pop(track_idx)
                 #del self.object_tracks[track_idx]
                 track_idxs_for_deletion.append(track_idx)
+
+                self.object_tracks_for_saving.append(track_obj)
 
                 #this isn't a tentative track, meaning it had been successfully tracked before deletion
                 self.valid_tracks_tracked+=1
