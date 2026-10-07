@@ -1,16 +1,16 @@
 import psycopg
 
 class Database:
-    def __init__(self,db_name="surveillance_project",table_name="test"):
+    def __init__(self,db_config):
         self._conn = psycopg.connect(
-            dbname = db_name,
-            user = "macha",
-            host = "localhost"
+            dbname = db_config["db_name"],
+            user = db_config["user"],
+            host = db_config["host"]
         )
 
         self._cursor = self._conn.cursor()
 
-        self._create_table(table_name = table_name)
+        self._create_table(table_name = db_config["table_name"])
 
     def _create_table(self,table_name:str):
         try:

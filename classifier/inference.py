@@ -18,15 +18,21 @@ class Inference:
 
         return v2.Compose(transforms)
 
-    def __init__(self,model_name="squeezenet_1_1",npz_file_path="pyt_classes.npz",weights_file="./pyt_squeezenet_model.pth"):
+    def __init__(self,model_config:dict):
+        #where model_config is a dict containing all the options needed
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self._class_labels = np.load(npz_file_path)["arr_0"]
+        self._class_labels = np.load(model_config["npz_file_path"])["arr_0"]
         print(f"Class labels: {self._class_labels}")
 
+        model_name = model_config["name"]
+        weights_file = model_config["weights_file"]
         self._model = get_model(model_name,weights_file=weights_file).to(self._device,memory_format=torch.channels_last)
 
-        self._transforms = self._create_transforms()
+        self._transforms = self._create_transforms(
+            z_norm = model_config["z_norm"],
+            resize_tpl = (model_config["width"],model_config["height"])
+        )
 
     def predict_single(self,img,threshold:float=0.5)->tuple[str,float]:
         img_tensor = self._transforms(img).unsqueeze(dim=0).to(self._device,memory_format=torch.channels_last)
@@ -72,7 +78,10 @@ if __name__ == "__main__":
     import glob
     import cv2
 
-    inference_obj = Inference()
+    inference_obj = Inference(
+        model_config = {
+        }
+    )
 
     sample_images = list()
     image_names = glob.glob("./images/*.jpg")

@@ -208,32 +208,30 @@ class ObjectTrack(KalmanFilter):
 
 
 class ObjectTracker:
-    def __init__(
-        self,
-        undetected_threshold:int = 20,
-        tentative_track_threshold:int = 5,
-        motion_threshold:float=13.28,
-        colour_threshold:float = 0.4,
-        save_tracks_threshold:int = 32,
-        start_track_id:int=1,
-        thumbnail_save_path:Path = Path("./assets/.db/thumbnail_images"),
-        table_name:str = "test",
-        db_name:str = "surveillance_project"
-    ):
+    def __init__(self,tracker_config:dict,model_config:dict,db_config:dict):
+        #tracker_config contains all the default values needed to initialise the ObjectTracker
+        #model_config contains the values for initialising the inference model
+        #db_config contains alll the default values needed to initialise the database
+
         #important thresholds, one for the threshold of when we proclaim a track to be prime for deletetion. (i.e. when it hasn't been detected, or rather
         #assigned a detected for UNDETECTED_THRESHOLD
         #the other threshold is for checking by how many frames we need to have detected a certain object, first for its track to be confirmed, or else for deletion
-        self.UNDETECTED_THRESHOLD = undetected_threshold
-        self.TENTATIVE_TRACK_THRESHOLD = tentative_track_threshold
+        self.UNDETECTED_THRESHOLD = tracker_config["undetected_threshold"]
+        self.TENTATIVE_TRACK_THRESHOLD = tracker_config["tentative_track_threshold"]
 
         #Threshold for the motion given by squared mahalanobis distance by which if the cost is above this threshold, we refuse it
-        self.MOTION_THRESHOLD = motion_threshold
+        self.MOTION_THRESHOLD = tracker_config["motion_threshold"]
 
         #threshold for the colour, by which if the colour_distance is above this threshold, we refuse it
-        self.COLOUR_THRESHOLD = colour_threshold
+        self.COLOUR_THRESHOLD = tracker_config["colour_threshold"]
 
         #threshold number for when tracks that have already been completed are going to be saved
-        self.save_tracks_threshold = save_tracks_threshold
+        self.save_tracks_threshold = tracker_config["save_tracks_threshold"]
+
+        #a dry run, ran without saving into the database
+        self.dry_run = tracker_config["dry_run"]
+
+        self.visualise = tracker_config["visualise"]
 
         # a big number to set as cost after we pre-gate
         #Also used to reject any assignments which are assigned to this cost
@@ -243,22 +241,15 @@ class ObjectTracker:
 
         #holds the object tracks which are going to be saved to a database after crossing the threshold (save_tracks_threshold)
         self.object_tracks_for_saving = list()
-        self.curr_track_id = start_track_id
+        self.curr_track_id = tracker_config["start_track_id"]
 
         #inference obj
-        self.inference_obj = Inference(
-            model_name = "squeezenet_1_1",
-            npz_file_path = "./assets/model/pyt_classes.npz",
-            weights_file = "./assets/model/pyt_squeezenet_model.pth"
-        )
+        self.inference_obj = Inference(model_config = model_config)
 
-        self.table_name = table_name
-        self.db_obj = Database(
-            db_name = db_name,
-            table_name = table_name
-        )
+        self.table_name = db_config["table_name"]
+        self.db_obj = Database(db_config = db_config)
 
-        self.thumbnail_save_path = thumbnail_save_path/table_name
+        self.thumbnail_save_path = Path(tracker_config["thumbnail_save_path"])/db_config["table_name"]
         self.thumbnail_save_path.mkdir(parents=True,exist_ok=True)
 
 
@@ -328,7 +319,7 @@ class ObjectTracker:
             #TODO:Make better
             #we draw from here since the unassigned tracks function deletes from the list
             #which will reduce its size
-            if working_frame is not None:
+            if working_frame is not None and self.visualise:
                 self.visualise_tracked_ids(
                     working_frame,
                     object_tracks = [self.object_tracks[idx] for idx,_ in assigned_idxs]
@@ -362,11 +353,12 @@ class ObjectTracker:
 
 
     def save_object_tracks(self):
-        print("Saving")
         thumbnail_images = list()
 
-        if len(self.object_tracks_for_saving) == 0:
+        if self.dry_run or len(self.object_tracks_for_saving) == 0:
             return
+
+        print("Saving")
 
         #first get the thumbnail image for each object track for classification
         for object_track in self.object_tracks_for_saving:

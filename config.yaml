@@ -1,0 +1,87 @@
+#grouped in terms of which module the configurations affect
+#
+#main 
+main:
+  video_path: "./assets/videos/vtest.avi"
+  #video_path: "./assets/videos/overpass.mkv"
+  #video_path: "./assets/videos/pedestrian walking.mkv"
+  #video_path: "/home/macha/work/playground/advanced/multi_videos/cross_and_merge.mp4"
+  min_width: 1280
+
+  # The measurements stds correspond to [c_x,c_y,width,height]
+  # where (c_x,c_y) represent the centroid of the object
+  # and well, width and height are the width and height of the object
+  measurements_stds: [3.0,3.0,10.0,10.0]
+
+  #not showing the gui equates to not showing the video as it is being applied
+  #which can result in a significant speed up since we aren't drawing things on the screen
+  show_gui: true
+
+  #0 is static, 1 is fasted, 2 upwards slower
+  gui_speed: 1
+
+#motion detector
+motion_detector:
+  #minimum contour area we are willing to take
+  contour_area_threshold: 150
+
+  # option between: 'background_subtractor', 'three_frame_difference'
+  detector_type: "background_subtractor"
+
+#object tracker
+object_tracker:
+  #number of frames to wait for a confirmed track that isn't being detected anymore
+  undetected_threshold: 20
+
+  #number of frames to wait to confirm a track
+  tentative_track_threshold: 5
+
+  #the threshold used in the cost function taken from the chi-square of 2
+  motion_threshold: 13.28
+
+  #the colour threshold for gating
+  colour_threshold: 0.4
+
+  #how many tracks to batch together before saving
+  #also helps since the classification is done in batches
+  save_tracks_threshold: 32
+
+  start_track_id: 1
+  thumbnail_save_path: "./assets/.db/thumbnail_images"
+
+  #dry run, whether to first run the pipeline without saving anything
+  dry_run: true
+
+  #whether to visualise the track ids on video ---> show_gui should also be true to be able to see it daaah :-)
+  visualise: true
+
+#model
+model:
+  #name of the model to use
+  #options are 'squeezenet_1_1'
+  name: "squeezenet_1_1"
+
+  #path to an npz file containing the class labels
+  npz_file_path: "./assets/model/pyt_classes.npz"
+
+  # path to the weights file
+  weights_file: "./assets/model/pyt_squeezenet_model.pth"
+
+  # whether to perform z_normalisation or not
+  z_norm: true
+
+  # the resolution for the inference model
+  width: 224
+  height: 224
+
+#database
+db:
+  #an existing database"
+  db_name: "surveillance_project"
+
+  #db user name and host"
+  user: "macha"
+  host: "localhost"
+
+  #table to use while saving"
+  table_name: "test"

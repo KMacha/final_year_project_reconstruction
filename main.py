@@ -1,11 +1,16 @@
 #!/usr/bin/python
 import time
+import yaml
 import cv2
 
 from motion_detection.detector import Detector
 from feature_extraction.colour_descriptor import get_colour_descriptor
 from feature_extraction.shape_descriptor import get_fourier_descriptors
 from object_tracker.object_tracker import ObjectTracker
+
+def get_configuration(config_file:str="./config.yaml")->dict:
+    with open(config_file,'r') as file_obj:
+        return yaml.safe_load(file_obj)
 
 def scale_contours(contours,scale_factor)->list:
     return [(contour/scale_factor).astype(int) for contour in contours]
@@ -44,13 +49,12 @@ def get_detection_bboxes(contours)->tuple[list,list]:
 
 
 if __name__ == "__main__":
-    #video_cap = cv2.VideoCapture("./assets/videos/overpass.mkv")
-    video_cap = cv2.VideoCapture("./assets/videos/vtest.avi")
-    #video_cap = cv2.VideoCapture("/home/macha/work/playground/advanced/multi_videos/cross_and_merge.mp4")
-    #video_cap = cv2.VideoCapture("./assets/videos/pedestrian walking.mkv")
+    config = get_configuration(config_file = "./config.yaml")
+
+    video_cap = cv2.VideoCapture(config["main"]["video_path"])
 
     #minimum resolution 1280 x 720
-    MIN_WIDTH = 1280
+    MIN_WIDTH = config["main"]["min_width"]
 
     width = video_cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     height = video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
@@ -67,10 +71,23 @@ if __name__ == "__main__":
 
     print(f"Resizing: {resize_frame}")
 
+    #this is the standard deviations for the measurements (in this case detections)
+    #to be used with the kalman filter
+    measurements_std_list = config["main"]["measurements_stds"]
+
 
     #detector_obj = Detector(detector_type="three_frame_difference")
-    detector_obj = Detector(contour_area_thresh=150)
-    tracker_obj = ObjectTracker()
+    detector_obj = Detector(
+        detector_type = config["motion_detector"]["detector_type"],
+        contour_area_thresh= config["motion_detector"]["contour_area_threshold"]
+    )
+
+    tracker_obj = ObjectTracker(
+        tracker_config = config["object_tracker"],
+        model_config = config["model"],
+        db_config = config["db"]
+
+    )
 
     if video_cap.isOpened():
         start_time = time.perf_counter()
@@ -108,26 +125,27 @@ if __name__ == "__main__":
                 detected_bboxes = detections_bboxes,
                 detected_colours_info = colour_descriptor,
                 detected_shape_info = shape_descriptor,
-                measurement_stds = [3.0,3.0,10.0,10.0],
+                measurement_stds = measurements_std_list,
                 orig_bboxes = upscaled_bboxes,
                 orig_frame = frame,
                 working_frame = working_frame,
                 frame_timestamp = frame_timestamp
             )
 
-            for (x,x_1,y,y_1) in detections_bboxes:
-                cv2.rectangle(working_frame,(x,y),(x_1,y_1),(255,0,0),2)
+            if config["main"]["show_gui"]:
+                for (x,x_1,y,y_1) in detections_bboxes:
+                    cv2.rectangle(working_frame,(x,y),(x_1,y_1),(255,0,0),2)
 
-            #contours = [(contour/[scale_x,scale_y]).astype(int) for contour in contours]
-            cv2.drawContours(working_frame,contours,-1,(0,255,0))
+                #contours = [(contour/[scale_x,scale_y]).astype(int) for contour in contours]
+                cv2.drawContours(working_frame,contours,-1,(0,255,0))
 
-            cv2.imshow("img",working_frame)
-            if motion_img is not None:
-                cv2.imshow("motion_img",motion_img)
+                cv2.imshow("img",working_frame)
+                if motion_img is not None:
+                    cv2.imshow("motion_img",motion_img)
 
-            key = cv2.waitKey(1) & 0xff;
+                key = cv2.waitKey(config["main"]["gui_speed"]) & 0xff;
 
-            if key == ord('q'): break
+                if key == ord('q'): break
 
 
         video_cap.release()
