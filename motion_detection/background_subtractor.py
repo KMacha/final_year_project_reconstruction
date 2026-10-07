@@ -19,7 +19,7 @@ class BackgroundSubtractor:
     def get_motion_image(self,img:'np.ndarray',thresh_val:int=129)->'np.ndarray':
         gray_img = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
-        gray_img = cv2.GaussianBlur(gray_img,(3,3),0)
+        gray_img = cv2.medianBlur(gray_img,5)
 
         fg_mask = self._background_subtractor.apply(gray_img)
 
@@ -27,6 +27,6 @@ class BackgroundSubtractor:
         #thresh_img = cv2.medianBlur(thresh_img,3)
 
         #thresh_img = cv2.morphologyEx(thresh_img,cv2.MORPH_OPEN,self._morph_kernel)
-        thresh_img = cv2.morphologyEx(thresh_img,cv2.MORPH_CLOSE,self._morph_kernel)
+        #thresh_img = cv2.morphologyEx(thresh_img,cv2.MORPH_CLOSE,self._morph_kernel)
 
         return thresh_img
