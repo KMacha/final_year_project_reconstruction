@@ -1,12 +1,15 @@
 import time
+import uuid
 import cv2
 import numpy as np
 
 from scipy.optimize import linear_sum_assignment
+from pathlib import Path
 
 from object_tracker.kalman_matrix_configs import get_kalman_filter_matrices
 from object_tracker.kalman_filter import KalmanFilter
 from classifier.inference import Inference
+from database.database import Database
 
 #maintains an object track, i.e. a kalman filter dedicated to tracking one object
 class ObjectTrack(KalmanFilter):
@@ -23,10 +26,6 @@ class ObjectTrack(KalmanFilter):
         #variable to keep track of how many times this track has tracked an object.
         self.num_frames_tracked = 0
 
-    def _set_thumbnail_image(self,thumbnail_image,resize_tpl:tuple=(224,224)):
-        if thumbnail_image is not None:
-            return thumbnail_image
-            #return cv2.resize(thumbnail_image,resize_tpl)
 
     def __init__(
         self,
@@ -38,6 +37,7 @@ class ObjectTrack(KalmanFilter):
         track_colour_hist:np.ndarray|None=None,
         track_shape_feature:np.ndarray|None = None,
         thumbnail_image:np.ndarray|None = None,
+        thumbnail_area:float = 0,
         track_start_timestamp:float|None = None,
         alpha:float=0.1
     ):
@@ -50,7 +50,8 @@ class ObjectTrack(KalmanFilter):
         self.track_end_timestamp = track_start_timestamp
 
         #the thumbnail image will be used to get the image category later before saving
-        self.thumbnail_image = self._set_thumbnail_image(thumbnail_image)
+        self.thumbnail_area = thumbnail_area
+        self.thumbnail_image = thumbnail_image
 
         matrices = get_kalman_filter_matrices(
             initial_measurements = initial_measurements,
@@ -110,15 +111,18 @@ class ObjectTrack(KalmanFilter):
         #where the keys are the column names as in the database/ saving medium for easy saving
         return {
             "total_frames_tracked": self.num_frames_tracked,
-            "colour_histogram":self.track_colour_hist,
-            "shape_feature": self.track_shape_feature,
+            "colour_histogram":self.track_colour_hist.tolist(),
+            "shape_feature": self.track_shape_feature.tolist(),
             "start_timestamp": self.track_start_timestamp,
             "end_timestamp": self.track_end_timestamp,
-            "thumbnail_image": self.thumbnail_image,
         }
 
     def set_confirmed(self,is_confirmed:bool=True):
         self.confirmed_track = is_confirmed
+
+    def update_thumbnail_image(self,thumbnail_image:np.ndarray|None,thumbnail_area:float=0):
+        if thumbnail_image is not None and thumbnail_area > self.thumbnail_area:
+            self.thumbnail_image = thumbnail_image
 
     def update_shape_feature_info(self,shape_feature):
         if shape_feature is None:
@@ -134,7 +138,6 @@ class ObjectTrack(KalmanFilter):
             self.track_colour_hist = colour_hist
         else:
             self.track_colour_hist = (1 - self.alpha) * self.track_colour_hist + self.alpha * colour_hist
-            cv2.normalize(self.track_colour_hist,self.track_colour_hist)
 
     def update_time(self,track_timestamp):
         if self.track_start_timestamp is None:
@@ -213,6 +216,9 @@ class ObjectTracker:
         colour_threshold:float = 0.4,
         save_tracks_threshold:int = 32,
         start_track_id:int=1,
+        thumbnail_save_path:Path = Path("./assets/.db/thumbnail_images"),
+        table_name:str = "test",
+        db_name:str = "surveillance_project"
     ):
         #important thresholds, one for the threshold of when we proclaim a track to be prime for deletetion. (i.e. when it hasn't been detected, or rather
         #assigned a detected for UNDETECTED_THRESHOLD
@@ -246,6 +252,15 @@ class ObjectTracker:
             weights_file = "./assets/model/pyt_squeezenet_model.pth"
         )
 
+        self.table_name = table_name
+        self.db_obj = Database(
+            db_name = db_name,
+            table_name = table_name
+        )
+
+        self.thumbnail_save_path = thumbnail_save_path/table_name
+        self.thumbnail_save_path.mkdir(parents=True,exist_ok=True)
+
 
         #variable to keep track of how many objects have really been tracked (not including tentative ones)
         #simulating what would be stored in a 'database'
@@ -258,8 +273,10 @@ class ObjectTracker:
         detected_colours_info:list,
         detected_shape_info:list,
         measurement_stds:float,
+        orig_bboxes:list[tuple],
         delta_t:float=1,
-        frame:np.ndarray=None,
+        orig_frame:np.ndarray = None,
+        working_frame:np.ndarray=None,
         frame_timestamp:float=0
     ):
         #where detections is a list of tuples containing the measurements, i.e. [(c_x,c_y,w,h),(c_x_1,c_y_1,w_1,h_1),...]
@@ -270,9 +287,9 @@ class ObjectTracker:
 
         if len(self.object_tracks) == 0:
             self._initialise_new_object_tracks(
-                frame = frame,
+                orig_frame = orig_frame,
                 detections = detections,
-                detected_bboxes = detected_bboxes,
+                detected_orig_bboxes = orig_bboxes,
                 delta_t = delta_t,
                 measurement_stds = measurement_stds,
                 detected_objects_colour_info = detected_colours_info,
@@ -301,17 +318,19 @@ class ObjectTracker:
                 assigned_idxs = assigned_idxs,
                 detections = detections,
                 detected_bboxes = detected_bboxes,
+                detected_orig_bboxes = orig_bboxes,
                 detected_colours_info = detected_colours_info,
                 detected_shape_info = detected_shape_info,
-                track_timestamp = frame_timestamp
+                track_timestamp = frame_timestamp,
+                orig_frame = orig_frame
             )
 
             #TODO:Make better
             #we draw from here since the unassigned tracks function deletes from the list
             #which will reduce its size
-            if frame is not None:
+            if working_frame is not None:
                 self.visualise_tracked_ids(
-                    frame,
+                    working_frame,
                     object_tracks = [self.object_tracks[idx] for idx,_ in assigned_idxs]
                 )
 
@@ -320,9 +339,9 @@ class ObjectTracker:
 
             #unassigned_detections are new detections hence initialise them?
             self._initialise_new_object_tracks(
-                frame = frame,
+                orig_frame = orig_frame,
                 detections = [detections[idx] for idx in unassigned_detections_idxs],
-                detected_bboxes = [detected_bboxes[idx] for idx in unassigned_detections_idxs],
+                detected_orig_bboxes = [orig_bboxes[idx] for idx in unassigned_detections_idxs],
                 delta_t = delta_t,
                 measurement_stds = measurement_stds,
                 detected_objects_colour_info =[detected_colours_info[idx] for idx in unassigned_detections_idxs],
@@ -331,7 +350,7 @@ class ObjectTracker:
             )
 
             if len(self.object_tracks_for_saving) >= self.save_tracks_threshold:
-                self._save_object_tracks()
+                self.save_object_tracks()
 
             #TODO: Better way for deletion?
             #Finally delete the tracks that were marked for deletion
@@ -339,10 +358,15 @@ class ObjectTracker:
             for object_track in tracks_for_deletion:
                 self.object_tracks.remove(object_track)
 
+        return working_frame
+
 
     def save_object_tracks(self):
         print("Saving")
         thumbnail_images = list()
+
+        if len(self.object_tracks_for_saving) == 0:
+            return
 
         #first get the thumbnail image for each object track for classification
         for object_track in self.object_tracks_for_saving:
@@ -360,29 +384,47 @@ class ObjectTracker:
 
         print(f"The Duration: {duration:.3f} Seconds")
 
-        for object_track,(label,prob) in zip(self.object_tracks_for_saving,predictions):
+        object_tracks_save_data = list()
+        for object_track,(category,category_prob) in zip(self.object_tracks_for_saving,predictions):
             save_info = object_track.get_save_info()
 
-            print("*"*50)
-            print("*"*50,"\n")
+            object_thumbnail_image = object_track.get_thumbnail_image()
+            thumbnail_save_path = self.thumbnail_save_path/f"{uuid.uuid4().hex}.jpg"
 
-            print(f"{label} ===> {prob:.3f}")
-            print("thumbnail_image:",save_info["thumbnail_image"].shape)
-            print("frames tracked:",save_info["total_frames_tracked"])
-            print("colour_histogram:",save_info["colour_histogram"].shape)
-            print("shape_feature:",save_info["shape_feature"].shape)
-            print("start_timestamp:",save_info["start_timestamp"])
-            print("end_timestamp:",save_info["end_timestamp"])
+            cv2.imwrite(thumbnail_save_path,object_thumbnail_image)
 
-            print("\n"+"*"*50)
-            print("*"*50,"\n")
+            #print("*"*50)
+            #print("*"*50,"\n")
+
+            save_info["category"] = category
+            save_info["category_probability"] = category_prob
+            save_info["thumbnail_image_path"] = str(thumbnail_save_path.absolute())
+
+            #print("frames tracked:",save_info["total_frames_tracked"])
+            #print(f"Category: {save_info['category']}, prob: {save_info['category_probability']:.3f}")
+            #print(f"Thumbnail: {save_info['thumbnail_image_path']}")
+            #print("colour_histogram:",save_info["colour_histogram"].shape)
+            #print("shape_feature:",save_info["shape_feature"].shape)
+            #print("start_timestamp:",save_info["start_timestamp"])
+            #print("end_timestamp:",save_info["end_timestamp"])
+
+            #print("\n"+"*"*50)
+            #print("*"*50,"\n")
+
+            object_tracks_save_data.append(save_info)
 
         #save to the database
+        if len(object_tracks_save_data):
+            self.db_obj.insert(
+                table_name = self.table_name,
+                insertion_data = object_tracks_save_data
+            )
 
+        #empty the list after saving
         self.object_tracks_for_saving = list()
 
 
-    def visualise_tracked_ids(self,frame:np.ndarray,object_tracks:list):
+    def visualise_tracked_ids(self,working_frame:np.ndarray,object_tracks:list):
         for track_obj in object_tracks:
             track_bbox = track_obj.get_bbox()
             track_id = track_obj.track_id
@@ -390,7 +432,7 @@ class ObjectTracker:
             if track_bbox is not None:
                 #where top_x and top_y are the top_left (x,y) co-ordinates of the bbox
                 top_x,top_y = track_bbox[0],track_bbox[2]
-                cv2.putText(frame,str(track_id),(top_x,top_y),cv2.FONT_HERSHEY_SIMPLEX,1,(0,0,0))
+                cv2.putText(working_frame,str(track_id),(top_x,top_y),cv2.FONT_HERSHEY_SIMPLEX,1,(0,0,0))
 
     def count_valid_tracks(self):
         for track_obj in self.object_tracks:
@@ -407,9 +449,9 @@ class ObjectTracker:
 
     def _initialise_new_object_tracks(
         self,
-        frame,
+        orig_frame,
         detections:list[tuple],
-        detected_bboxes:list[tuple],
+        detected_orig_bboxes:list[tuple],
         delta_t:float,
         measurement_stds:list,
         detected_objects_colour_info:list,
@@ -417,16 +459,18 @@ class ObjectTracker:
         track_start_timestamp: float
     ):
         #see track function for explanation of parameters
-        zipped_things = zip(detections,detected_bboxes,detected_objects_colour_info,detected_shape_info)
-        for (x,y,w,h),(x,x_1,y,y_1),object_colour_hist,object_shape_info in zipped_things:
+        zipped_things = zip(detections,detected_orig_bboxes,detected_objects_colour_info,detected_shape_info)
+        for (c_x,c_y,w,h),(x,x_1,y,y_1),object_colour_hist,object_shape_info in zipped_things:
+
             track_obj = ObjectTrack(
-                initial_measurements = {"initial_x":x,"initial_y":y,"initial_w":w,"initial_h":h},
+                initial_measurements = {"initial_x":c_x,"initial_y":c_y,"initial_w":w,"initial_h":h},
                 delta_t = delta_t,
                 measurement_stds = measurement_stds,
                 track_colour_hist = object_colour_hist,
                 track_shape_feature = object_shape_info,
                 track_id = self.curr_track_id,
-                thumbnail_image = frame[y:y_1,x:x_1],
+                thumbnail_image = orig_frame[y:y_1,x:x_1],
+                thumbnail_area = abs((x-x_1)*(y-y_1)),
                 track_start_timestamp = track_start_timestamp
             )
             self.object_tracks.append(track_obj)
@@ -438,27 +482,33 @@ class ObjectTracker:
         assigned_idxs:list,
         detections:list,
         detected_bboxes:list,
+        detected_orig_bboxes:list,
         detected_colours_info:list,
         detected_shape_info:list,
-        track_timestamp:float
-
+        track_timestamp:float,
+        orig_frame:np.ndarray
     ):
         #assigned_idxs is a list containing tuples of track_idx to detection_idx
         #detections is a list of all the detections
         #detected_bboxes is a list of all the bboxes
         #detected_colours_info is a list of all the colour info
         #detected_shape_info is a list of all the shape info
-        #track_timestamp is the timestamp for when the detected objects were taken from the frame
+        #track_timestamp is the timestamp for when the detected objects were taken from the working_frame
 
         for t_idx,d_idx in assigned_idxs:
             track_obj = self.object_tracks[t_idx]
             measurement = detections[d_idx]
 
             track_obj.set_bbox(detected_bboxes[d_idx])
+            x,x_1,y,y_1 = detected_orig_bboxes[d_idx]
 
             #TODO: Perhaps only update the colour info when we are very confident about the colour threshold
             track_obj.update_colour_info(detected_colours_info[d_idx])
             track_obj.update_shape_feature_info(detected_shape_info[d_idx])
+            track_obj.update_thumbnail_image(
+                thumbnail_image = orig_frame[y:y_1,x:x_1],
+                thumbnail_area = abs((x-x_1)*(y-y_1))
+            )
             track_obj.update_time(track_timestamp = track_timestamp)
 
             track_obj.update_predict(measurement = measurement)
