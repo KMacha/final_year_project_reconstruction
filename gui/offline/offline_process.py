@@ -1,8 +1,10 @@
 import PySide6.QtWidgets as qtw
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,Signal
 
 class OfflineProcessWindow(qtw.QWidget):
+    _back_to_offline = Signal()
+
     def __init__(self):
         super().__init__()
 
@@ -93,7 +95,9 @@ class OfflineProcessWindow(qtw.QWidget):
         hor_layout_2 = qtw.QHBoxLayout()
 
         query_btn = qtw.QPushButton("Go To Query")
+
         cancel_btn = qtw.QPushButton("Cancel Processing")
+        cancel_btn.clicked.connect(self._cancel)
 
         hor_layout_2.addWidget(query_btn)
         hor_layout_2.addWidget(cancel_btn)
@@ -105,4 +109,7 @@ class OfflineProcessWindow(qtw.QWidget):
         gui_progress_frame.setLayout(layout)
 
         self._main_layout.addWidget(gui_progress_frame)
+
+    def _cancel(self):
+        self._back_to_offline.emit()
 
