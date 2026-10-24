@@ -47,6 +47,61 @@ def get_detection_bboxes(contours)->tuple[list,list]:
 
     return contours,detections,detections_bboxes
 
+def process_frame(
+    orig_frame:'np.ndarray',
+    frame_timestamp:float,
+    detector_obj:Detector,
+    tracker_obj:ObjectTracker,
+    measurements_std_list:list = [3.0,3.0,10.0,10.0],
+    resize_frame:bool = False,
+    scale_factor:float = 1.0,
+    draw:bool=False
+)->tuple['np.ndarray'|None,'np.ndarray'|None]:
+    #orig_frame is the original frame that hasn't become the working frame... (wow such a good explanation)
+
+    #working_frame is the frame we are working on which might potentially be resized
+    working_frame = orig_frame.copy()
+    if resize_frame:
+        working_frame = cv2.resize(orig_frame,fx=scale_factor,fy=scale_factor,interpolation=cv2.INTER_AREA)
+
+    motion_img,contours = detector_obj.get_motion_image_and_objects(bgr_img = working_frame)
+
+    #mapping the contours to the original size
+
+    contours,detections,detections_bboxes = get_detection_bboxes(contours = contours)
+
+    colour_descriptor = get_colour_descriptor(frame = working_frame,contours = contours,images_bboxes = detections_bboxes)
+    shape_descriptor = get_fourier_descriptors(contours)
+
+    #where upscaled means those that have been 'upscaled' to the original frame... Only applied for those whose working_frame is different from the 
+    #original one.
+    upscaled_bboxes = detections_bboxes
+    if resize_frame:
+        upscaled_bboxes = get_scaled_detection_bboxes(contours,scale_factor = scale_factor)
+
+    working_frame = tracker_obj.track(
+        detections = detections,
+        detected_bboxes = detections_bboxes,
+        detected_colours_info = colour_descriptor,
+        detected_shape_info = shape_descriptor,
+        measurement_stds = measurements_std_list,
+        orig_bboxes = upscaled_bboxes,
+        orig_frame = orig_frame,
+        working_frame = working_frame,
+        frame_timestamp = frame_timestamp
+    )
+
+    if draw:
+        for (x,x_1,y,y_1) in detections_bboxes:
+            cv2.rectangle(working_frame,(x,y),(x_1,y_1),(255,0,0),2)
+
+        #contours = [(contour/[scale_x,scale_y]).astype(int) for contour in contours]
+        cv2.drawContours(working_frame,contours,-1,(0,255,0))
+
+        return working_frame, motion_img
+
+    return None,None
+
 
 if __name__ == "__main__":
     config = get_configuration(config_file = "./config.yaml")
@@ -58,6 +113,7 @@ if __name__ == "__main__":
 
     width = video_cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     height = video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    approx_number_frames = video_cap.get(cv2.CAP_PROP_FRAME_COUNT)
 
     resize_frame = False
     max_dim = max(width,height)
@@ -92,53 +148,26 @@ if __name__ == "__main__":
     if video_cap.isOpened():
         start_time = time.perf_counter()
 
+        processed_frames = 0
         while True:
             ret, frame = video_cap.read()
 
             if not ret: break
 
-            working_frame = frame.copy()
-            if resize_frame:
-                working_frame = cv2.resize(frame,fx=scale_factor,fy=scale_factor,interpolation=cv2.INTER_AREA)
-
-
             frame_timestamp = video_cap.get(cv2.CAP_PROP_POS_MSEC)
 
-            #resized_frame = cv2.resize(frame,(new_width,new_height))
-
-            #motion_img = detector_obj.get_motion_image(bgr_img = frame)
-            motion_img,contours = detector_obj.get_motion_image_and_objects(bgr_img = working_frame)
-
-            #mapping the contours to the original size
-
-            contours,detections,detections_bboxes = get_detection_bboxes(contours = contours)
-
-            colour_descriptor = get_colour_descriptor(frame = frame,contours = contours,images_bboxes = detections_bboxes)
-            shape_descriptor = get_fourier_descriptors(contours)
-
-            upscaled_bboxes = detections_bboxes
-            if resize_frame:
-                upscaled_bboxes = get_scaled_detection_bboxes(contours,scale_factor = scale_factor)
-
-            working_frame = tracker_obj.track(
-                detections = detections,
-                detected_bboxes = detections_bboxes,
-                detected_colours_info = colour_descriptor,
-                detected_shape_info = shape_descriptor,
-                measurement_stds = measurements_std_list,
-                orig_bboxes = upscaled_bboxes,
+            working_frame, motion_img = process_frame(
                 orig_frame = frame,
-                working_frame = working_frame,
-                frame_timestamp = frame_timestamp
+                frame_timestamp = frame_timestamp,
+                detector_obj = detector_obj,
+                tracker_obj = tracker_obj,
+                resize_frame = resize_frame,
+                scale_factor = scale_factor,
+                draw = config["main"]["show_gui"]
             )
 
+
             if config["main"]["show_gui"]:
-                for (x,x_1,y,y_1) in detections_bboxes:
-                    cv2.rectangle(working_frame,(x,y),(x_1,y_1),(255,0,0),2)
-
-                #contours = [(contour/[scale_x,scale_y]).astype(int) for contour in contours]
-                cv2.drawContours(working_frame,contours,-1,(0,255,0))
-
                 cv2.imshow("img",working_frame)
                 if motion_img is not None:
                     cv2.imshow("motion_img",motion_img)
@@ -146,6 +175,9 @@ if __name__ == "__main__":
                 key = cv2.waitKey(config["main"]["gui_speed"]) & 0xff;
 
                 if key == ord('q'): break
+            else:
+                processed_frames+=1
+                print(f"Processed [{processed_frames:,}/{approx_number_frames:,}]",end='\r',flush=True)
 
 
         video_cap.release()
@@ -157,6 +189,6 @@ if __name__ == "__main__":
         end_time = time.perf_counter()
 
         duration = end_time - start_time
-        print(f"Duration:{duration:.4f} seconds")
+        print(f"\nDuration:{duration:.4f} seconds")
 
 
