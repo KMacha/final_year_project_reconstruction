@@ -244,6 +244,16 @@ class OfflineWindow(qtw.QStackedWidget):
         self._change_table_name_frame.setEnabled(False)
 
     def process_video(self):
+        if not self._video_path:
+            message = (
+                "No video selected...\n"
+                "Please Select a video using the <b>Enter Surveillance Footage</b> Button"
+            )
+
+            qtw.QMessageBox.information(self,"No Video",message)
+
+            return
+
         show_video_gui = False
 
         if self._process_chck_btn.checkState() == Qt.Checked:
@@ -261,6 +271,12 @@ class OfflineWindow(qtw.QStackedWidget):
             print("Showing video?",show_video_gui)
 
         self.setCurrentWidget(self._offline_processing_window)
+        self._offline_processing_window.set_video_path(self._video_path)
+        self._offline_processing_window.configure_vars(
+            table_name = self._table_name,
+            show_visualisations = show_video_gui
+        )
+        self._offline_processing_window.process_video(draw=show_video_gui)
 
 
     def preview_video(self):
