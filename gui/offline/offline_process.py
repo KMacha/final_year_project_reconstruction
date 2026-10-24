@@ -156,7 +156,7 @@ class OfflineProcessWindow(qtw.QWidget):
 
         self._video_timer.stop()
 
-    def configure_vars(self,table_name:str='test_table',show_visualisations:bool=True):
+    def configure_vars(self,table_name:str='test_table',show_visualisations:bool=True,video_file_path:str=''):
         with open("./.gui_config.yaml",'r') as file_obj:
             self._config = yaml.safe_load(file_obj)
 
@@ -174,10 +174,12 @@ class OfflineProcessWindow(qtw.QWidget):
         )
 
         self._config["db"]["table_name"] = table_name
+
         self._tracker_obj = ObjectTracker(
             tracker_config = self._config["object_tracker"],
             model_config = self._config["model"],
-            db_config = self._config["db"]
+            db_config = self._config["db"],
+            video_file_path = video_file_path
         )
 
     def set_video_path(self,video_path:str):
@@ -279,9 +281,14 @@ class OfflineProcessWindow(qtw.QWidget):
                 self._tracking_region_lbl.setPixmap(QPixmap.fromImage(working_qimage))
         else:
             self._video_timer.stop()
+
+            #save the last of any remaining tracks
+            self._tracker_obj.save_object_tracks()
+
             self._end_time = time.perf_counter()
             duration = self._end_time - self._start_time
 
             print(f"Duration: {duration:.3f} seconds")
 
             self._progress_bar.setValue(self._approx_number_frames)
+

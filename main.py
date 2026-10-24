@@ -141,8 +141,8 @@ if __name__ == "__main__":
     tracker_obj = ObjectTracker(
         tracker_config = config["object_tracker"],
         model_config = config["model"],
-        db_config = config["db"]
-
+        db_config = config["db"],
+        video_file_path = config["main"]["video_path"]
     )
 
     if video_cap.isOpened():

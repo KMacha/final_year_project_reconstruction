@@ -204,8 +204,8 @@ class QueryResultsWindow(qtw.QStackedWidget):
         context_menu.exec(frame.mapToGlobal(pos))
 
     def _preview_result(self,idx:int):
-        video_path = "/home/macha/Programming/projects/final_year_project_recreation/assets/videos/vtest.avi"
-        #video_path = self._query_results[idx]["video_path"]
+        #video_path = "/home/macha/Programming/projects/final_year_project_recreation/assets/videos/vtest.avi"
+        video_path = self._query_results[idx]["video_path"]
         start_timestamp = self._query_results[idx]["start_timestamp"]
         end_timestamp = self._query_results[idx]["end_timestamp"]
 

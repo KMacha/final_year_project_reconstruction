@@ -244,6 +244,8 @@ class OfflineWindow(qtw.QStackedWidget):
             self._table_btn.setEnabled(True)
 
     def save_new_table_name(self):
+        new_tbl_name = self._table_line_edit.text()
+
         if new_tbl_name.strip():
             self._table_name = new_tbl_name
             self._table_lbl.setText(self._table_name)
@@ -285,7 +287,8 @@ class OfflineWindow(qtw.QStackedWidget):
         self._offline_processing_window.set_video_path(self._video_path)
         self._offline_processing_window.configure_vars(
             table_name = self._table_name,
-            show_visualisations = show_video_gui
+            show_visualisations = show_video_gui,
+            video_file_path = self._video_path
         )
         self._offline_processing_window.process_video(draw=show_video_gui)
 

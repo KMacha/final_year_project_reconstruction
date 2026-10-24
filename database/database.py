@@ -44,6 +44,7 @@ class Database:
                     end_timestamp FLOAT8,
                     shape_feature VECTOR,
                     colour_histogram FLOAT8[],
+                    video_path TEXT,
                     thumbnail_image_path TEXT
                 )
                 '''
@@ -59,9 +60,9 @@ class Database:
         #insert multiple rows
         insertion_query = f'''
             INSERT INTO {table_name}
-            (total_frames_tracked,category,category_probability,start_timestamp,end_timestamp,shape_feature,colour_histogram,thumbnail_image_path)
+            (total_frames_tracked,category,category_probability,start_timestamp,end_timestamp,shape_feature,colour_histogram,video_path,thumbnail_image_path)
             VALUES
-            (%(total_frames_tracked)s,%(category)s,%(category_probability)s,%(start_timestamp)s,%(end_timestamp)s,%(shape_feature)s,%(colour_histogram)s,%(thumbnail_image_path)s)
+            (%(total_frames_tracked)s,%(category)s,%(category_probability)s,%(start_timestamp)s,%(end_timestamp)s,%(shape_feature)s,%(colour_histogram)s,%(video_path)s,%(thumbnail_image_path)s)
         '''
 
         try:
@@ -79,7 +80,7 @@ class Database:
             "SELECT total_frames_tracked,category,category_probability,"
             "start_timestamp,end_timestamp,"
             "shape_feature <-> %(shape_feature)s AS shape_cost,"
-            "shape_feature,colour_histogram,thumbnail_image_path "
+            "shape_feature,colour_histogram,video_path,thumbnail_image_path "
             f"FROM {table_name}"
         )
 
@@ -117,7 +118,7 @@ class Database:
 
         query_str = (
             "SELECT total_frames_tracked,category,category_probability,start_timestamp,"
-            "end_timestamp,shape_feature,colour_histogram,thumbnail_image_path "
+            "end_timestamp,shape_feature,colour_histogram,video_path,thumbnail_image_path "
             f"FROM {table_name} "
             "{0} "
             f"ORDER BY shape_feature <-> %(shape_feature)s LIMIT {limit} "
@@ -149,7 +150,7 @@ class Database:
 
         query_str = (
             "SELECT total_frames_tracked,category,category_probability,start_timestamp,"
-            "end_timestamp,shape_feature,colour_histogram,thumbnail_image_path "
+            "end_timestamp,shape_feature,colour_histogram,video_path,thumbnail_image_path "
             f"FROM {table_name}"
         )
 

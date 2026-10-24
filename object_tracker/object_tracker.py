@@ -208,7 +208,7 @@ class ObjectTrack(KalmanFilter):
 
 
 class ObjectTracker:
-    def __init__(self,tracker_config:dict,model_config:dict,db_config:dict):
+    def __init__(self,tracker_config:dict,model_config:dict,db_config:dict,video_file_path:str=''):
         #tracker_config contains all the default values needed to initialise the ObjectTracker
         #model_config contains the values for initialising the inference model
         #db_config contains alll the default values needed to initialise the database
@@ -249,6 +249,7 @@ class ObjectTracker:
         self.table_name = db_config["table_name"]
         self.db_obj = Database(db_config = db_config)
 
+        self.video_file_path = Path(video_file_path)
         self.thumbnail_save_path = Path(tracker_config["thumbnail_save_path"])/db_config["table_name"]
         self.thumbnail_save_path.mkdir(parents=True,exist_ok=True)
 
@@ -391,6 +392,7 @@ class ObjectTracker:
             save_info["category"] = category
             save_info["category_probability"] = category_prob
             save_info["thumbnail_image_path"] = str(thumbnail_save_path.absolute())
+            save_info["video_path"] = str(self.video_file_path.absolute())
 
             #print("frames tracked:",save_info["total_frames_tracked"])
             #print(f"Category: {save_info['category']}, prob: {save_info['category_probability']:.3f}")
