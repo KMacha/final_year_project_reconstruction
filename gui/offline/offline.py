@@ -1,3 +1,4 @@
+import yaml
 import cv2
 import sys
 import PySide6.QtWidgets as qtw
@@ -9,8 +10,17 @@ from gui.offline.offline_process import OfflineProcessWindow
 from gui.preview import PreviewVideoWindow
 
 class OfflineWindow(qtw.QStackedWidget):
+    def get_video_path_dir(self)->str:
+        with open("./.gui_config.yaml",'r') as file_obj:
+            config = yaml.safe_load(file_obj)
+
+        print(config["main"]["video_path"])
+        return config["main"]["video_path"]
+
     def __init__(self):
         super().__init__()
+
+        self._video_files_path = self.get_video_path_dir()
 
         #get the offlineprocessing window
         self._offline_processing_window = OfflineProcessWindow()
@@ -193,7 +203,8 @@ class OfflineWindow(qtw.QStackedWidget):
 
     def get_video_file(self):
         #returns a tuple with the first item being the path
-        results = qtw.QFileDialog.getOpenFileName(self)
+        print(self._video_path)
+        results = qtw.QFileDialog.getOpenFileName(self,dir = self._video_files_path)
 
         video_path = results[0]
 
