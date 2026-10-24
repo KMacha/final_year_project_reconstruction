@@ -1,4 +1,5 @@
 import psycopg
+from psycopg.rows import dict_row
 
 class Database:
     def __init__(self,db_config):
@@ -9,6 +10,7 @@ class Database:
         )
 
         self._cursor = self._conn.cursor()
+        self._dict_cursor = self._conn.cursor(row_factory = dict_row)
 
         if db_config.get("table_name",None) is not None:
             self._create_table(table_name = db_config["table_name"])
@@ -70,7 +72,9 @@ class Database:
         else:
             self._conn.commit()
 
-    def query_by_all_features(self,table_name:str,shape_feature:list,filter_str:str=None,vals_dict:dict=dict())->list:
+    def query_by_all_features(self,table_name:str,shape_feature:list,filter_str:str=None,vals_dict:dict=dict(),use_dict_cursor:bool=True)->list:
+        cursor = self._dict_cursor if use_dict_cursor else self._cursor
+
         query_str = (
             "SELECT total_frames_tracked,category,category_probability,"
             "start_timestamp,end_timestamp,"
@@ -87,7 +91,7 @@ class Database:
         results = list()
 
         try:
-            query_res = self._cursor.execute(query_str,vals_dict)
+            query_res = cursor.execute(query_str,vals_dict)
 
             results = query_res.fetchall()
         except BaseException as e:
@@ -98,16 +102,19 @@ class Database:
 
         return results
 
-    def query_by_colour_feature(self,table_name:str,filter_str:str=None,vals_dict:dict=dict())->list:
+    def query_by_colour_feature(self,table_name:str,filter_str:str=None,vals_dict:dict=dict(),use_dict_cursor:bool=True)->list:
         return self.query(
             table_name = table_name,
             filter_str = filter_str,
             vals_dict = vals_dict,
             limit = -1,
-            order = False
+            order = False,
+            use_dict_cursor = use_dict_cursor
         )
 
-    def query_by_shape_feature(self,table_name:str,shape_feature:list,filter_str:str=None,vals_dict:dict=dict(),limit:int=20)->list:
+    def query_by_shape_feature(self,table_name:str,shape_feature:list,filter_str:str=None,vals_dict:dict=dict(),limit:int=20,use_dict_cursor:bool=True)->list:
+        cursor = self._dict_cursor if use_dict_cursor else self._cursor
+
         query_str = (
             "SELECT total_frames_tracked,category,category_probability,start_timestamp,"
             "end_timestamp,shape_feature,colour_histogram,thumbnail_image_path "
@@ -126,7 +133,7 @@ class Database:
         results = list()
 
         try:
-            query_res = self._cursor.execute(query_str,vals_dict)
+            query_res = cursor.execute(query_str,vals_dict)
 
             results = query_res.fetchall()
         except BaseException as e:
@@ -137,7 +144,9 @@ class Database:
 
         return results
 
-    def query(self,table_name:str,filter_str:str=None,vals_dict:dict=dict(),limit:int=20,offset:int=0,order:bool=True)->list:
+    def query(self,table_name:str,filter_str:str=None,vals_dict:dict=dict(),limit:int=20,offset:int=0,order:bool=True,use_dict_cursor:bool=True)->list:
+        cursor = self._dict_cursor if use_dict_cursor else self._cursor
+
         query_str = (
             "SELECT total_frames_tracked,category,category_probability,start_timestamp,"
             "end_timestamp,shape_feature,colour_histogram,thumbnail_image_path "
@@ -157,9 +166,9 @@ class Database:
 
         try:
             if vals_dict:
-                query_res = self._cursor.execute(query_str,vals_dict)
+                query_res = cursor.execute(query_str,vals_dict)
             else:
-                query_res = self._cursor.execute(query_str)
+                query_res = cursor.execute(query_str)
 
             results = query_res.fetchall()
 
@@ -173,6 +182,7 @@ class Database:
 
     def __del__(self):
         self._cursor.close()
+        self._dict_cursor.close()
         self._conn.close()
 
 
