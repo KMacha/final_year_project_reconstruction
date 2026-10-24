@@ -17,6 +17,7 @@ class QueryResultsWindow(qtw.QStackedWidget):
 
         self._images_per_row = 5
         self._db_obj = db_obj
+        self._table_name = None
 
         #self._results_layout = qtw.QVBoxLayout()
 
@@ -80,6 +81,9 @@ class QueryResultsWindow(qtw.QStackedWidget):
 
     def _init_ui(self):
         self._create_header()
+
+    def set_table_name(self,table_name:str):
+        self._table_name = table_name
 
     def show_results(self,query_results:list[dict],refined_results:bool=False):
         self._clear_results_layout(layout = self._results_layout)
@@ -249,7 +253,7 @@ class QueryResultsWindow(qtw.QStackedWidget):
                 self._back_to_previous_results_btn.setEnabled(True)
 
                 results = self._db_obj.query_by_shape_feature(
-                    table_name = "test",
+                    table_name = self._table_name,
                     shape_feature = self._query_results[idx]["shape_feature"]
                 )
 
@@ -262,7 +266,7 @@ class QueryResultsWindow(qtw.QStackedWidget):
             case "colour":
                 self._back_to_previous_results_btn.setEnabled(True)
 
-                results = self._db_obj.query_by_colour_feature(table_name = "test")
+                results = self._db_obj.query_by_colour_feature(table_name = self._table_name)
 
                 results = self._refine_results_by_colour(idx,results)
 
@@ -274,7 +278,7 @@ class QueryResultsWindow(qtw.QStackedWidget):
                 self._back_to_previous_results_btn.setEnabled(True)
 
                 results = self._db_obj.query_by_all_features(
-                    table_name = "test",
+                    table_name = self._table_name,
                     shape_feature = self._query_results[idx]["shape_feature"]
                 )
 

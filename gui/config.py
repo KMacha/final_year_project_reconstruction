@@ -12,7 +12,7 @@ class ConfigWindow(qtw.QWidget):
 
         self._main_layout = qtw.QVBoxLayout()
 
-        self._detectors = ["background_subtractor","3 frame difference","Machine Learning"]
+        self._detectors = ["background_subtractor","three_frame_difference","Machine_Learning"]
         self._models = ["squeezenet_1_1"]
 
         self._init_ui()

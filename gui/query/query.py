@@ -383,6 +383,7 @@ class QueryWindow(qtw.QStackedWidget):
             )
         #print(results)
 
+        self._query_results_widget.set_table_name(table_name)
         self._query_results_widget.show_results(results)
         self.setCurrentWidget(self._query_results_widget)
 
