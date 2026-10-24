@@ -122,6 +122,9 @@ class QueryWindow(qtw.QStackedWidget):
         self._db_tbl_combobox = qtw.QComboBox()
         self._db_tbl_combobox.setSizePolicy(qtw.QSizePolicy.Fixed,qtw.QSizePolicy.Preferred)
 
+        #TODO: Make it dynamic perhaps using MVC???? 
+        #TODO: Because of incase of when someone does processing of video and then comes straight to querying, the newly created
+        #table won't be available
         tables = self._db_obj._get_db_tables()
         self._db_tbl_combobox.addItems(tables)
 
@@ -211,8 +214,18 @@ class QueryWindow(qtw.QStackedWidget):
         hor_layout.addLayout(layout)
         hor_layout.addStretch(1)
 
-    def _get_top_k_colour_results(self,colour_feature,results:list,limit:int=20):
-        colour_costs = [cv2.compareHist(colour_feature,np.array(result[-2]).astype(np.float32),cv2.HISTCMP_BHATTACHARYYA) for result in results]
+    def _sort_by_all_features(self,query_colour_feature:np.ndarray,results:list[dict],limit:int=20)->list[dict]:
+        colour_costs = np.array([cv2.compareHist(query_colour_feature,np.array(result["colour_histogram"]).astype(np.float32),cv2.HISTCMP_BHATTACHARYYA) for result in results])
+        shape_costs = np.array([result["shape_cost"] for result in results])
+
+        costs = 0.5*colour_costs + 0.5*shape_costs
+
+        results_costs = sorted(zip(results,costs),key=lambda x: x[1])
+
+        return [result for result,_ in results_costs[:limit]]
+
+    def _get_top_k_colour_results(self,colour_feature,results:list,limit:int=20)->list[dict]:
+        colour_costs = [cv2.compareHist(colour_feature,np.array(result["colour_histogram"]).astype(np.float32),cv2.HISTCMP_BHATTACHARYYA) for result in results]
 
         results_costs = sorted(zip(results,colour_costs),key=lambda x: x[1])
 
@@ -354,6 +367,12 @@ class QueryWindow(qtw.QStackedWidget):
                 filter_str = filter_str,
                 vals_dict = vals_dict
             )
+
+            results = self._sort_by_all_features(
+                query_colour_feature = colour_descriptor,
+                results = results
+            )
+            #print(len(results))
         else:
             results = self._db_obj.query(
                 table_name = "test",
@@ -364,6 +383,7 @@ class QueryWindow(qtw.QStackedWidget):
 
         self._query_results_widget.show_results(results)
         self.setCurrentWidget(self._query_results_widget)
+
 
     def _set_colour_descriptor_usage(self,value):
         self._use_colour_descriptor = value == Qt.Checked.value
