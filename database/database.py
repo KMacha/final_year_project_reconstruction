@@ -10,7 +10,24 @@ class Database:
 
         self._cursor = self._conn.cursor()
 
-        self._create_table(table_name = db_config["table_name"])
+        if db_config.get("table_name",None) is not None:
+            self._create_table(table_name = db_config["table_name"])
+
+    def _get_db_tables(self)->list:
+        query = "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+        tables = list()
+
+        try:
+            results = self._cursor.execute(query)
+
+            tables = [res[0] for res in results.fetchall()]
+        except BaseException as e:
+            print("An error occurred\n",e)
+            self._conn.rollback()
+        else:
+            self._conn.commit()
+
+        return tables
 
     def _create_table(self,table_name:str):
         try:
@@ -52,6 +69,107 @@ class Database:
             self._conn.rollback()
         else:
             self._conn.commit()
+
+    def query_by_all_features(self,table_name:str,shape_feature:list,filter_str:str=None,vals_dict:dict=dict())->list:
+        query_str = (
+            "SELECT total_frames_tracked,category,category_probability,"
+            "start_timestamp,end_timestamp,"
+            "shape_feature <-> %(shape_feature)s AS shape_cost,"
+            "shape_feature,colour_histogram,thumbnail_image_path "
+            f"FROM {table_name}"
+        )
+
+        vals_dict["shape_feature"] = shape_feature
+
+        if filter_str is not None:
+            query_str+=f" WHERE {filter_str}"
+
+        results = list()
+
+        try:
+            query_res = self._cursor.execute(query_str,vals_dict)
+
+            results = query_res.fetchall()
+        except BaseException as e:
+            print("An error occurred\n",e)
+            self._conn.rollback()
+        else:
+            self._conn.commit()
+
+        return results
+
+    def query_by_colour_feature(self,table_name:str,filter_str:str=None,vals_dict:dict=dict())->list:
+        return self.query(
+            table_name = table_name,
+            filter_str = filter_str,
+            vals_dict = vals_dict,
+            limit = -1,
+            order = False
+        )
+
+    def query_by_shape_feature(self,table_name:str,shape_feature:list,filter_str:str=None,vals_dict:dict=dict(),limit:int=20)->list:
+        query_str = (
+            "SELECT total_frames_tracked,category,category_probability,start_timestamp,"
+            "end_timestamp,shape_feature,colour_histogram,thumbnail_image_path "
+            f"FROM {table_name} "
+            "{0} "
+            f"ORDER BY shape_feature <-> %(shape_feature)s LIMIT {limit} "
+        )
+
+        vals_dict["shape_feature"] = shape_feature
+
+        if filter_str is not None:
+            query_str = query_str.format(f"WHERE {filter_str}")
+        else:
+            query_str = query_str.format('')
+
+        results = list()
+
+        try:
+            query_res = self._cursor.execute(query_str,vals_dict)
+
+            results = query_res.fetchall()
+        except BaseException as e:
+            print("An error occurred\n",e)
+            self._conn.rollback()
+        else:
+            self._conn.commit()
+
+        return results
+
+    def query(self,table_name:str,filter_str:str=None,vals_dict:dict=dict(),limit:int=20,offset:int=0,order:bool=True)->list:
+        query_str = (
+            "SELECT total_frames_tracked,category,category_probability,start_timestamp,"
+            "end_timestamp,shape_feature,colour_histogram,thumbnail_image_path "
+            f"FROM {table_name}"
+        )
+
+        results = list()
+
+        if filter_str is not None:
+            query_str+= f" WHERE {filter_str}"
+
+        if order:
+            query_str+=" ORDER BY category_probability DESC"
+
+        if limit > 0:
+            query_str+=f" LIMIT {limit}"
+
+        try:
+            if vals_dict:
+                query_res = self._cursor.execute(query_str,vals_dict)
+            else:
+                query_res = self._cursor.execute(query_str)
+
+            results = query_res.fetchall()
+
+        except BaseException as e:
+            print("An error occurred\n",e)
+            self._conn.rollback()
+        else:
+            self._conn.commit()
+
+        return results
 
     def __del__(self):
         self._cursor.close()
