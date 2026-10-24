@@ -344,16 +344,18 @@ class QueryWindow(qtw.QStackedWidget):
 
         results = list()
 
+        table_name = self._db_tbl_combobox.currentText()
+
         if self._use_shape_descriptor and not self._use_colour_descriptor:
             results = self._db_obj.query_by_shape_feature(
-                table_name = "test",
+                table_name = table_name,
                 shape_feature = str(shape_descriptor),
                 filter_str = filter_str,
                 vals_dict = vals_dict
             )
         elif self._use_colour_descriptor and not self._use_shape_descriptor:
             results = self._db_obj.query_by_colour_feature(
-                table_name = "test",
+                table_name = table_name,
                 filter_str = filter_str,
                 vals_dict = vals_dict
             )
@@ -362,7 +364,7 @@ class QueryWindow(qtw.QStackedWidget):
         elif self._use_colour_descriptor and self._use_shape_descriptor:
             print("querying with both")
             results = self._db_obj.query_by_all_features(
-                table_name = "test",
+                table_name = table_name,
                 shape_feature = str(shape_descriptor),
                 filter_str = filter_str,
                 vals_dict = vals_dict
@@ -375,7 +377,7 @@ class QueryWindow(qtw.QStackedWidget):
             #print(len(results))
         else:
             results = self._db_obj.query(
-                table_name = "test",
+                table_name = table_name,
                 filter_str = filter_str,
                 vals_dict = vals_dict,
             )
