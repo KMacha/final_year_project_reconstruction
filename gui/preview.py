@@ -13,6 +13,9 @@ class PreviewVideoWindow(qtw.QWidget):
 
         self._video_cap = None
 
+        self._start_time_ms = 0
+        self._end_time_ms = 0
+
         self._video_speed = 1
 
         self._video_paused = self._loop_video = False
@@ -93,9 +96,10 @@ class PreviewVideoWindow(qtw.QWidget):
             self._video_cap.release()
             self._video_cap = None
 
+
         self._video_speed = 1
         self._video_paused = self._loop_video = False
-
+        self._start_time_ms = self._end_time_ms = 0
 
         #reset the dynamic gui components
         self._pause_btn.setText("Pause")
@@ -105,20 +109,15 @@ class PreviewVideoWindow(qtw.QWidget):
         self._speed_spinbox.setValue(self._video_speed)
 
         #stop the time as the video speed function does start the timer
-        self._video_timer.stop()
+        if self._video_timer.isActive():
+            self._video_timer.stop()
 
     def _exit(self):
         self._back_to_offline.emit()
 
         self._reset_gui()
 
-        #self._video_timer.stop()
-
-        #if self._video_cap is not None:
-        #    self._video_cap.release()
-        #    self._video_cap = None
-
-    def set_up_video(self,restart:bool=False):
+    def set_up_video(self,restart:bool=False,start_time_ms:float|None=None,end_time_ms:float|None=None):
         if self._video_path is None:
             message = "No Video to preview"
             qtw.QMessageBox.critical(self,"Error",message)
@@ -126,6 +125,11 @@ class PreviewVideoWindow(qtw.QWidget):
 
         if self._video_cap is None:
             self._video_cap = cv2.VideoCapture(self._video_path)
+
+        self._start_time_ms = start_time_ms
+        self._end_time_ms = end_time_ms
+        if start_time_ms is not None:
+            self._video_cap.set(cv2.CAP_PROP_POS_MSEC,start_time_ms)
 
         if restart:
             self._video_cap.set(cv2.CAP_PROP_POS_MSEC,0)
@@ -135,11 +139,16 @@ class PreviewVideoWindow(qtw.QWidget):
 
     def _restart_video(self):
         #just reset the video_capture object, that way restarting a video also respects whether the video had been paused or not
+        print("speed:",self._video_speed)
         if self._video_cap is not None:
-            self._video_cap.set(cv2.CAP_PROP_POS_MSEC,0)
+            start_time_ms = self._start_time_ms if self._start_time_ms else 0
+            self._video_cap.set(cv2.CAP_PROP_POS_MSEC,start_time_ms)
+
+            if not self._video_timer.isActive() and not self._video_paused:
+                self._video_timer.start(self._video_speed)
+
             if self._video_paused:
                 self._preview_video()
-        #self.set_up_video(restart = True)
 
     def _loop_unloop_video(self):
         if self._loop_video:
@@ -161,11 +170,17 @@ class PreviewVideoWindow(qtw.QWidget):
             self._video_paused = False
             self._pause_btn.setText("Pause")
 
+    def set_video_speed(self,video_speed:int):
+        self._speed_spinbox.setValue(video_speed)
+        self._video_timer.stop()
+
     def change_video_speed(self,video_speed:int):
+        self._video_speed = video_speed
+
         self._video_speed_lbl.setText(str(video_speed))
 
-        self._video_speed = video_speed
-        self._video_timer.start(video_speed)
+        if self._video_timer.isActive():
+            self._video_timer.start(video_speed)
 
     def _preview_video(self):
         #TODO: Perhaps add a check to check if _video_cap has anything --> first test and see if needed...
@@ -173,6 +188,15 @@ class PreviewVideoWindow(qtw.QWidget):
 
         #only show a frame if a frame exists
         if ret:
+            frame_timestamp = self._video_cap.get(cv2.CAP_PROP_POS_MSEC)
+            if self._end_time_ms is not None and frame_timestamp >= self._end_time_ms:
+                if self._loop_video:
+                    start_time_ms = self._start_time_ms if self._start_time_ms else 0
+                    self._video_cap.set(cv2.CAP_PROP_POS_MSEC,start_time_ms)
+                else:
+                    self._video_timer.stop()
+                return
+
             frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
 
             qt_image = QImage(
@@ -185,8 +209,10 @@ class PreviewVideoWindow(qtw.QWidget):
             self._video_lbl.setPixmap(QPixmap.fromImage(qt_image))
         else:
             if self._loop_video:
-                self._video_cap.set(cv2.CAP_PROP_POS_MSEC,0)
+                start_time_ms = self._start_time_ms if self._start_time_ms else 0
+                self._video_cap.set(cv2.CAP_PROP_POS_MSEC,start_time_ms)
 
     #helper methods
     def set_video_path(self,video_path:str):
         self._video_path = video_path
+
