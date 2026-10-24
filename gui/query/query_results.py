@@ -81,7 +81,7 @@ class QueryResultsWindow(qtw.QStackedWidget):
     def _init_ui(self):
         self._create_header()
 
-    def show_results(self,query_results:list,refined_results:bool=False):
+    def show_results(self,query_results:list[dict],refined_results:bool=False):
         self._clear_results_layout(layout = self._results_layout)
 
         if refined_results:
@@ -107,8 +107,8 @@ class QueryResultsWindow(qtw.QStackedWidget):
                 row_layout = qtw.QHBoxLayout()
                 self._results_layout.addLayout(row_layout)
 
-            img_path = query_res[-1]
-            img_cat = query_res[1]
+            img_path = query_res["thumbnail_image_path"]
+            img_cat = query_res["category"]
             thumbnail_frame = self.create_thumbnail_frame(
                 idx = i,
                 thumbnail_img_path = img_path,
@@ -205,8 +205,12 @@ class QueryResultsWindow(qtw.QStackedWidget):
 
     def _preview_result(self,idx:int):
         video_path = "/home/macha/Programming/projects/final_year_project_recreation/assets/videos/vtest.avi"
-        start_timestamp = self._query_results[idx][-5]
-        end_timestamp = self._query_results[idx][-4]
+        #video_path = self._query_results[idx]["video_path"]
+        start_timestamp = self._query_results[idx]["start_timestamp"]
+        end_timestamp = self._query_results[idx]["end_timestamp"]
+
+        print(f"Start time stamp: {start_timestamp}")
+        print(f"end time stamp: {end_timestamp}")
 
         self.setCurrentWidget(self._preview_window)
 
@@ -218,11 +222,11 @@ class QueryResultsWindow(qtw.QStackedWidget):
         )
 
     def _refine_results_by_all_features(self,idx:int,results:list,limit:int=20)->list:
-        query_colour_feature = np.array(self._query_results[idx][-2]).astype(np.float32)
-        #shape_feature = np.array(self._query_results[idx][-3]).astype(np.float32)
+        query_colour_feature = np.array(self._query_results[idx]["colour_histogram"]).astype(np.float32)
+        #shape_feature = np.array(self._query_results[idx]["shape_feature"]).astype(np.float32)
 
-        colour_costs = np.array([cv2.compareHist(query_colour_feature,np.array(result[-2]).astype(np.float32),cv2.HISTCMP_BHATTACHARYYA) for result in results])
-        shape_costs = np.array([result[-4] for result in results])
+        colour_costs = np.array([cv2.compareHist(query_colour_feature,np.array(result["colour_histogram"]).astype(np.float32),cv2.HISTCMP_BHATTACHARYYA) for result in results])
+        shape_costs = np.array([result["shape_cost"] for result in results])
 
         costs = 0.5*colour_costs + 0.5*shape_costs
 
@@ -230,11 +234,10 @@ class QueryResultsWindow(qtw.QStackedWidget):
 
         return [result for result,_ in results_costs[:limit]]
 
-
     def _refine_results_by_colour(self,idx:int,results:list,limit:int=20)->list:
-        query_colour_feature = np.array(self._query_results[idx][-2]).astype(np.float32)
+        query_colour_feature = np.array(self._query_results[idx]["colour_histogram"]).astype(np.float32)
 
-        colour_costs = [cv2.compareHist(query_colour_feature,np.array(result[-2]).astype(np.float32),cv2.HISTCMP_BHATTACHARYYA) for result in results]
+        colour_costs = [cv2.compareHist(query_colour_feature,np.array(result["colour_histogram"]).astype(np.float32),cv2.HISTCMP_BHATTACHARYYA) for result in results]
 
         results_costs = sorted(zip(results,colour_costs),key=lambda x: x[1])
 
@@ -247,7 +250,7 @@ class QueryResultsWindow(qtw.QStackedWidget):
 
                 results = self._db_obj.query_by_shape_feature(
                     table_name = "test",
-                    shape_feature = self._query_results[idx][-3]
+                    shape_feature = self._query_results[idx]["shape_feature"]
                 )
 
                 self.show_results(
@@ -272,7 +275,7 @@ class QueryResultsWindow(qtw.QStackedWidget):
 
                 results = self._db_obj.query_by_all_features(
                     table_name = "test",
-                    shape_feature = self._query_results[idx][-3]
+                    shape_feature = self._query_results[idx]["shape_feature"]
                 )
 
                 results = self._refine_results_by_all_features(idx,results)
