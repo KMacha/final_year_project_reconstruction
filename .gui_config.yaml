@@ -1,0 +1,35 @@
+db:
+  db_name: surveillance_project
+  host: localhost
+  user: macha
+main:
+  gui_speed: 1
+  min_height: 720
+  min_width: 1280
+  show_gui: true
+  video_path: ./assets/videos
+model:
+  height: 224
+  name: squeezenet_1_1
+  npz_file_path: ./assets/model/pyt_classes.npz
+  weights_file: ./assets/model/pyt_squeezenet_model.pth
+  width: 224
+  z_norm: true
+motion_detector:
+  contour_area_threshold: 150
+  detector_type: background_subtractor
+  measurement_stds:
+  - 3.0
+  - 3.0
+  - 10.0
+  - 10.0
+object_tracker:
+  colour_threshold: 0.4
+  dry_run: false
+  motion_threshold: 13.28
+  save_tracks_threshold: 32
+  start_track_id: 1
+  tentative_track_threshold: 5
+  thumbnail_save_path: ./assets/.db/thumbnail_images
+  undetected_threshold: 20
+  visualise: true

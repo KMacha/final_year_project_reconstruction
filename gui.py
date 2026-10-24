@@ -2,6 +2,7 @@
 import PySide6.QtWidgets as qtw
 import PySide6.QtCore as qtc
 
+from gui.config import ConfigWindow
 from gui.offline.offline import OfflineWindow
 from gui.query.query import QueryWindow
 
@@ -30,6 +31,7 @@ class MainWindow(qtw.QMainWindow):
         self.setCentralWidget(self._main_widget)
 
     def _init_ui(self):
+        self._config_window = ConfigWindow()
         self._offline_window = OfflineWindow()
         self._query_window = QueryWindow()
 
@@ -40,6 +42,7 @@ class MainWindow(qtw.QMainWindow):
 
         self._main_stacked_widget.addWidget(self._offline_window)
         self._main_stacked_widget.addWidget(self._query_window)
+        self._main_stacked_widget.addWidget(self._config_window)
 
     def _create_side_panel(self):
         side_panel_layout = qtw.QVBoxLayout()
@@ -49,12 +52,16 @@ class MainWindow(qtw.QMainWindow):
         self._side_panel.setContentsMargins(0,0,1,0)
         self._side_panel.setSizePolicy(qtw.QSizePolicy.Fixed,qtw.QSizePolicy.Minimum)
 
+        config_btn = qtw.QPushButton("Configuration Settings")
+        config_btn.clicked.connect(lambda: self._main_stacked_widget.setCurrentWidget(self._config_window))
+
         offline_btn = qtw.QPushButton("Offline Feature\n Processing")
         offline_btn.clicked.connect(lambda: self._main_stacked_widget.setCurrentWidget(self._offline_window))
 
         query_btn = qtw.QPushButton("Query \n(Online Search & Retrieval)")
         query_btn.clicked.connect(lambda: self._main_stacked_widget.setCurrentWidget(self._query_window))
 
+        side_panel_layout.addWidget(config_btn)
         side_panel_layout.addStretch(1)
         side_panel_layout.addWidget(offline_btn)
         side_panel_layout.addStretch(1)
