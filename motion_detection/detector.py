@@ -4,6 +4,13 @@ import numpy as np
 from motion_detection.background_subtractor import BackgroundSubtractor
 from motion_detection.three_frame_difference import ThreeFrameDifference
 
+def get_contours(thresh_img:np.ndarray,return_all:bool=True):
+    contours,hierarchy = cv2.findContours(thresh_img,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+
+    contours = sorted(contours,key=cv2.contourArea,reverse=True)
+
+    return contours if return_all else contours[0]
+
 class Detector:
     def _initialise_detector(self,detector_type):
         match detector_type:
