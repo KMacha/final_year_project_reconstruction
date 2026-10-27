@@ -20,7 +20,7 @@ def get_scaled_detection_bboxes(contours,scale_factor:float)->list:
 
     upscaled_contours = [(contour/scale_factor).astype(int) for contour in contours]
 
-    for contour in contours:
+    for contour in upscaled_contours:
         x,y,w,h = cv2.boundingRect(contour)
         x_1 = x+w
         y_1 = y+h
